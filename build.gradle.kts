@@ -36,7 +36,7 @@ dependencies {
 
     testImplementation(kotlin("test"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.0")
 
     implementation("org.jetbrains.kotlin:kotlin-reflect:2.0.20")
     implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.8")
