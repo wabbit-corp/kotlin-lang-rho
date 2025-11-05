@@ -40,16 +40,16 @@ class PermSpec2 {
     fun genTerm(freeVars: List<String>? = null): Gen<Rho.Term> = genPredicate.flatMapZip {
         val arity = it[1] - '0'
         val argGen = if (freeVars == null) genArg else genArg1(freeVars)
-        Gen.repeat(arity, argGen)
+        Gen.listOf(arity, argGen)
     }.map { (predicate, args) ->
         Rho.Term(predicate, Arr.fromList(args))
     }
 
     val genRule: Gen<Rho.Rule> = Gen.int(0..<MAX_TEST_TERMS).flatMap { antecedentCount ->
         Gen.int(1..<MAX_TEST_TERMS).flatMap { consequentCount ->
-            Gen.repeat(antecedentCount, genTerm()).flatMap { antecedents ->
+            Gen.listOf(antecedentCount, genTerm()).flatMap { antecedents ->
                 val freeVars = antecedents.flatMap { it.freeVars() }.toSet()
-                Gen.repeat(consequentCount, genTerm(freeVars.toList())).map { consequents ->
+                Gen.listOf(consequentCount, genTerm(freeVars.toList())).map { consequents ->
                     Rho.Rule(Arr.fromList(antecedents), Arr.fromList(consequents))
                 }
             }
@@ -97,7 +97,7 @@ class PermSpec2 {
     }
 
     @Test fun `adding and removing all rules`() {
-        val genRules = Gen.repeat(Gen.int(2..10), genRule)
+        val genRules = Gen.listOf(2..10, genRule)
 
         Tests.foreachMin(genRules, SplittableRandom(0), 10000, minimizerSteps = 10000) { rules ->
             val state = Rho()
@@ -111,7 +111,7 @@ class PermSpec2 {
     @Test fun `adding rules in different orders`() {
         val rng = SplittableRandom(0)
 
-        val genRules = Gen.repeat(Gen.int(10..30), genRule)
+        val genRules = Gen.listOf(10..30, genRule)
 
         Tests.foreachMin(genRules, rng, 1000) { rules1 ->
             val rng = SplittableRandom(0)
@@ -131,7 +131,7 @@ class PermSpec2 {
     @Test fun `adding and removing rules in different orders`() {
         val rng = SplittableRandom(0)
 
-        val genRules = Gen.repeat(Gen.int(2..5), genRule)
+        val genRules = Gen.listOf(2..5, genRule)
 
         Tests.foreachMin(genRules, rng, 1000, minimizerSteps = 10000) { rules1 ->
             val rng = SplittableRandom(0)
@@ -155,7 +155,7 @@ class PermSpec2 {
     @Test fun `adding and removing rules in different orders 2`() {
         val rng = SplittableRandom(0)
 
-        val genRules = Gen.repeat(Gen.int(6..10), genRule)
+        val genRules = Gen.listOf(6..10, genRule)
 
         Tests.foreachMin(genRules, rng, 1000, minimizerSteps = 100000) { rules1 ->
             val rng = SplittableRandom(0)
