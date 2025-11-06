@@ -1,14 +1,14 @@
 package one.wabbit.lang.rho
 
+import java.util.SplittableRandom
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import one.wabbit.data.Arr
 import one.wabbit.data.shuffled
 import one.wabbit.random.gen.Gen
 import one.wabbit.random.gen.Tests
 import one.wabbit.random.gen.sampleUnbounded
-import java.util.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 const val MAX_TEST_ARITY = 2
 const val MAX_TEST_TERMS = 4
@@ -16,52 +16,59 @@ const val MAX_TEST_TERMS = 4
 class PermSpec2 {
     private val rng = SplittableRandom()
     val genConst: Gen<String> =
-        Gen.int(0..9).map { ('a' + it).toString().let {
-            if (rng.nextBoolean()) it.intern() else it
-        } }
-    val genVar: Gen<String> =
-        Gen.int(0..9).map { ('A' + it).toString().intern() }
+        Gen.int(0..9).map {
+            ('a' + it).toString().let { if (rng.nextBoolean()) it.intern() else it }
+        }
+    val genVar: Gen<String> = Gen.int(0..9).map { ('A' + it).toString().intern() }
     val genPredicate: Gen<PredicateName> =
-        Gen.int(1..<MAX_TEST_ARITY).zip(Gen.int(1..4))
-            .map { (arity, id) ->
-                "f${arity}_$id".intern()
-            }
-    val genArg: Gen<Rho.Arg> = Gen.oneOfGen(
-        genVar.map { Rho.Arg.Var(it) },
-        genConst.map { Rho.Arg.Const(it) }
-    )
+        Gen.int(1..<MAX_TEST_ARITY).zip(Gen.int(1..4)).map { (arity, id) ->
+            "f${arity}_$id".intern()
+        }
+    val genArg: Gen<Rho.Arg> =
+        Gen.oneOfGen(genVar.map { Rho.Arg.Var(it) }, genConst.map { Rho.Arg.Const(it) })
+
     fun genArg1(freeVars: List<String>) =
-        if (freeVars.isEmpty()) genConst.map { Rho.Arg.Const(it) }
-        else Gen.oneOfGen(
-            Gen.int(0..<freeVars.size).map { Rho.Arg.Var(freeVars[it]) },
+        if (freeVars.isEmpty()) {
             genConst.map { Rho.Arg.Const(it) }
-        )
+        } else {
+            Gen.oneOfGen(
+                Gen.int(0..<freeVars.size).map { Rho.Arg.Var(freeVars[it]) },
+                genConst.map { Rho.Arg.Const(it) },
+            )
+        }
 
-    fun genTerm(freeVars: List<String>? = null): Gen<Rho.Term> = genPredicate.flatMapZip {
-        val arity = it[1] - '0'
-        val argGen = if (freeVars == null) genArg else genArg1(freeVars)
-        Gen.listOf(arity, argGen)
-    }.map { (predicate, args) ->
-        Rho.Term(predicate, Arr.fromList(args))
-    }
+    fun genTerm(freeVars: List<String>? = null): Gen<Rho.Term> =
+        genPredicate
+            .flatMapZip {
+                val arity = it[1] - '0'
+                val argGen = if (freeVars == null) genArg else genArg1(freeVars)
+                Gen.listOf(arity, argGen)
+            }
+            .map { (predicate, args) -> Rho.Term(predicate, Arr.fromList(args)) }
 
-    val genRule: Gen<Rho.Rule> = Gen.int(0..<MAX_TEST_TERMS).flatMap { antecedentCount ->
-        Gen.int(1..<MAX_TEST_TERMS).flatMap { consequentCount ->
-            Gen.listOf(antecedentCount, genTerm()).flatMap { antecedents ->
-                val freeVars = antecedents.flatMap { it.freeVars() }.toSet()
-                Gen.listOf(consequentCount, genTerm(freeVars.toList())).map { consequents ->
-                    Rho.Rule(Arr.fromList(antecedents), Arr.fromList(consequents))
+    val genRule: Gen<Rho.Rule> =
+        Gen.int(0..<MAX_TEST_TERMS).flatMap { antecedentCount ->
+            Gen.int(1..<MAX_TEST_TERMS).flatMap { consequentCount ->
+                Gen.listOf(antecedentCount, genTerm()).flatMap { antecedents ->
+                    val freeVars = antecedents.flatMap { it.freeVars() }.toSet()
+                    Gen.listOf(consequentCount, genTerm(freeVars.toList())).map { consequents ->
+                        Rho.Rule(Arr.fromList(antecedents), Arr.fromList(consequents))
+                    }
                 }
             }
         }
-    }
 
-    val String.r get() = parseRule(this)
-    val String.t get() = parseTerm(this)
-    val String.f get() = parseTerm(this).toFact()
+    val String.r
+        get() = parseRule(this)
+
+    val String.t
+        get() = parseTerm(this)
+
+    val String.f
+        get() = parseTerm(this).toFact()
 
     fun printStateProofs(state: Rho) {
-        for(f in state.facts.values.sortedBy { it.toString() }) {
+        for (f in state.facts.values.sortedBy { it.toString() }) {
             for (it in f.entries.sortedBy { it.key.toString() }) {
                 if (it.value.upstreamProofs.size == 1) {
                     val p = it.value.upstreamProofs.entries.first()
@@ -76,19 +83,23 @@ class PermSpec2 {
         }
     }
 
-    @Test fun stressTest() {
+    @Test
+    fun stressTest() {
         val rng = SplittableRandom(0)
         val state = Rho()
         val t0 = System.nanoTime()
         val TOTAL = 6000
         for (i in 1..TOTAL) {
-            if (state.rules.size < 300)
+            if (state.rules.size < 300) {
                 state.add(genRule.sampleUnbounded(rng))
-            else if (state.rules.size > 500)
+            } else if (state.rules.size > 500) {
                 state.remove(state.rules.keys.toList()[rng.nextInt(state.rules.size)])
-            else {
-                if (rng.nextBoolean()) state.add(genRule.sampleUnbounded(rng))
-                else state.remove(state.rules.keys.toList()[rng.nextInt(state.rules.size)])
+            } else {
+                if (rng.nextBoolean()) {
+                    state.add(genRule.sampleUnbounded(rng))
+                } else {
+                    state.remove(state.rules.keys.toList()[rng.nextInt(state.rules.size)])
+                }
             }
         }
         val t1 = System.nanoTime()
@@ -96,7 +107,8 @@ class PermSpec2 {
         println("Time: ${(t1 - t0) / 1_000_000.0 / TOTAL} ms per rule")
     }
 
-    @Test fun `adding and removing all rules`() {
+    @Test
+    fun `adding and removing all rules`() {
         val genRules = Gen.listOf(2..10, genRule)
 
         Tests.foreachMin(genRules, SplittableRandom(0), 10000, minimizerSteps = 10000) { rules ->
@@ -108,7 +120,8 @@ class PermSpec2 {
         }
     }
 
-    @Test fun `adding rules in different orders`() {
+    @Test
+    fun `adding rules in different orders`() {
         val rng = SplittableRandom(0)
 
         val genRules = Gen.listOf(10..30, genRule)
@@ -128,7 +141,8 @@ class PermSpec2 {
         }
     }
 
-    @Test fun `adding and removing rules in different orders`() {
+    @Test
+    fun `adding and removing rules in different orders`() {
         val rng = SplittableRandom(0)
 
         val genRules = Gen.listOf(2..5, genRule)
@@ -152,7 +166,8 @@ class PermSpec2 {
         }
     }
 
-    @Test fun `adding and removing rules in different orders 2`() {
+    @Test
+    fun `adding and removing rules in different orders 2`() {
         val rng = SplittableRandom(0)
 
         val genRules = Gen.listOf(6..10, genRule)
@@ -185,11 +200,9 @@ class PermSpec2 {
         }
     }
 
-    @Test fun `regression 1`() {
-        val rules = listOf(
-            ":- f".r,
-            ":- f ∧ h".r
-        )
+    @Test
+    fun `regression 1`() {
+        val rules = listOf(":- f".r, ":- f ∧ h".r)
         val state0 = Rho()
         for (r in rules) state0.add(r)
         for (r in rules) state0.remove(r)
@@ -197,7 +210,8 @@ class PermSpec2 {
         assertTrue(state0.allFacts().toList().isEmpty())
     }
 
-    @Test fun `regression 2`() {
+    @Test
+    fun `regression 2`() {
         val state1 = Rho()
         println("####### 1 #######")
         for (r in listOf("x :- y".r, ":- x".r)) state1.add(r)
@@ -216,25 +230,22 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 3`() {
-        //Rules1: [:- f0_1, f0_1 :- f0_1 ∧ f1_2("g"), :- f0_1 ∧ f1_0("a")]
-        //Remove1: [:- f0_1]
-        //Rules2: [:- f0_1 ∧ f1_0("a"), f0_1 :- f0_1 ∧ f1_2("g"), :- f0_1]
-        //Remove2: [:- f0_1]
+    @Test
+    fun `regression 3`() {
+        // Rules1: [:- f0_1, f0_1 :- f0_1 ∧ f1_2("g"), :- f0_1 ∧ f1_0("a")]
+        // Remove1: [:- f0_1]
+        // Rules2: [:- f0_1 ∧ f1_0("a"), f0_1 :- f0_1 ∧ f1_2("g"), :- f0_1]
+        // Remove2: [:- f0_1]
         val state1 = Rho()
         println("####### 1 #######")
         for (r in listOf(":- x".r, "x :- x ∧ f('g')".r, ":- x ∧ g('a')".r)) state1.add(r)
         printStateProofs(state1)
-        assertEquals(setOf(
-            "f('g')".f, "x".f, "g('a')".f
-        ), state1.allFacts().toSet())
+        assertEquals(setOf("f('g')".f, "x".f, "g('a')".f), state1.allFacts().toSet())
 
         println("####### 2 #######")
         state1.remove(":- x".r)
         printStateProofs(state1)
-        assertEquals(setOf(
-            "x".f, "g('a')".f, "f('g')".f
-        ), state1.allFacts().toSet())
+        assertEquals(setOf("x".f, "g('a')".f, "f('g')".f), state1.allFacts().toSet())
 
         val state2 = Rho()
         println("####### 3 #######")
@@ -248,13 +259,10 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 4`() {
+    @Test
+    fun `regression 4`() {
         // f2_1 :- f1_2, f1_2 ∧ f2_2 :- f1_3 ∧ f2_1, :- f2_2 ∧ f2_1
-        val rules1 = listOf(
-            "a :- b".r,
-            "b ∧ c :- d".r,
-            ":- c ∧ a".r
-        )
+        val rules1 = listOf("a :- b".r, "b ∧ c :- d".r, ":- c ∧ a".r)
 
         val rng = SplittableRandom(0)
         val rules2 = rules1.shuffled(rng)
@@ -273,7 +281,8 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 5`() {
+    @Test
+    fun `regression 5`() {
         // f1_2 ∧ f2_1 :- f1_1 ∧ f2_3, :- f1_2, :- f2_2("a") ∧ f1_3, f1_2 :- f1_3 ∧ f1_3
         val rules = listOf(":- a".r, ":- b".r, "a :- b".r)
         val remove1 = listOf(":- a".r, ":- b".r)
@@ -297,7 +306,8 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 6`() {
+    @Test
+    fun `regression 6`() {
         // [:- f1_1("g") ∧ f2_2("f", "c"), ∀H, A. f2_2(H, A) :- f1_1("g"), :- f1_1("e")]
         val rules = listOf(":- f(x) ∧ g(z)".r, "g(Z) :- f(x)".r, ":- f(y)".r)
 
@@ -305,7 +315,7 @@ class PermSpec2 {
         println("####### 1 #######")
         for (r in rules) state.add(r)
         println("STATE:")
-        for(f in state.facts.values) {
+        for (f in state.facts.values) {
             for (it in f) {
                 println("  ${it.key} <- ${it.value.upstreamProofs.map{ it.key.id }}")
             }
@@ -316,7 +326,7 @@ class PermSpec2 {
             state.remove(r)
 
             println("STATE:")
-            for(f in state.facts.values) {
+            for (f in state.facts.values) {
                 for (it in f) {
                     println("  ${it.key} <- ${it.value.upstreamProofs.map{ it.key.id }}")
                 }
@@ -325,18 +335,11 @@ class PermSpec2 {
         println(state.allFacts())
     }
 
-    @Test fun `regression 7`() {
-        val rules1 = listOf(
-            ":- f('g') ∧ g('b')".r,
-            ":- g('a')".r,
-            "g(F) :- g('d') ∧ f(F)".r
-        )
+    @Test
+    fun `regression 7`() {
+        val rules1 = listOf(":- f('g') ∧ g('b')".r, ":- g('a')".r, "g(F) :- g('d') ∧ f(F)".r)
 
-        val rules2 = listOf(
-            ":- f('g') ∧ g('b')".r,
-            "g(F) :- g('d') ∧ f(F)".r,
-            ":- g('a')".r
-        )
+        val rules2 = listOf(":- f('g') ∧ g('b')".r, "g(F) :- g('d') ∧ f(F)".r, ":- g('a')".r)
 
         val state1 = Rho()
         for (r in rules1) state1.add(r)
@@ -346,9 +349,10 @@ class PermSpec2 {
         // if we remove :- g('a'), the correct set of remaining facts:
         // f('b'), f('d'), f('g'), g('b'), g('d')
 
-        assertEquals(setOf(
-            "f('b')".f, "f('d')".f, "f('g')".f, "g('b')".f, "g('d')".f
-        ), state1.allFacts().toSet())
+        assertEquals(
+            setOf("f('b')".f, "f('d')".f, "f('g')".f, "g('b')".f, "g('d')".f),
+            state1.allFacts().toSet(),
+        )
 
         println("STATE 1':")
         printStateProofs(state1)
@@ -366,20 +370,22 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 8`() {
+    @Test
+    fun `regression 8`() {
         // :- g("b") ∧ h("i"),
         // ∀J, F. f(J) ∧ f(F) :- f(F),
         // ∀D. h(D) :- f("f") ∧ h("h"),
         // ∀J. h(J) :- f("i"),
         // ∀G. f(G) :- g(G) ∧ h("e")
 
-        val rules1 = listOf(
-            ":- g('b') ∧ h('i')".r,
-            "f(J) ∧ f(F) :- f(F)".r,
-            "h(D) :- f('f') ∧ h('h')".r,
-            "h(J) :- f('i')".r,
-            "f(G) :- g(G) ∧ h('e')".r
-        )
+        val rules1 =
+            listOf(
+                ":- g('b') ∧ h('i')".r,
+                "f(J) ∧ f(F) :- f(F)".r,
+                "h(D) :- f('f') ∧ h('h')".r,
+                "h(J) :- f('i')".r,
+                "f(G) :- g(G) ∧ h('e')".r,
+            )
 
         val rng = SplittableRandom(0)
         val remove1 = rules1.take(rules1.size / 2)
@@ -411,18 +417,20 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 9`() {
+    @Test
+    fun `regression 9`() {
         // [:- f("e") ∧ g("a"),
         // :- h("b") ∧ h("b"),
         // :- f("i") ∧ g("f"),
         // ∀E, A. g(E) ∧ f(A) :- g(E)]
 
-        val rules1 = listOf(
-            ":- f('e') ∧ g('a')".r,
-            ":- h('b') ∧ h('b')".r,
-            ":- f('i') ∧ g('f')".r,
-            "g(E) ∧ f(A) :- g(E)".r
-        )
+        val rules1 =
+            listOf(
+                ":- f('e') ∧ g('a')".r,
+                ":- h('b') ∧ h('b')".r,
+                ":- f('i') ∧ g('f')".r,
+                "g(E) ∧ f(A) :- g(E)".r,
+            )
 
         val rng = SplittableRandom(0)
         val remove1 = rules1.take(rules1.size / 2)
@@ -438,7 +446,10 @@ class PermSpec2 {
         val add2 = add1.shuffled(rng)
         val remove2_2 = remove1_2.shuffled(rng)
 
-        println(rules2) // [:- h("'b'") ∧ h("'b'"), :- f("'i'") ∧ g("'f'"), ∀E, A. g(E) ∧ f(A) :- g(E), :- f("'e'") ∧ g("'a'")]
+        println(
+            rules2
+        ) // [:- h("'b'") ∧ h("'b'"), :- f("'i'") ∧ g("'f'"), ∀E, A. g(E) ∧ f(A) :- g(E), :-
+        // f("'e'") ∧ g("'a'")]
         println(remove2) // [:- f("'e'") ∧ g("'a'"), :- h("'b'") ∧ h("'b'")]
         println(add2) // [:- f("'e'") ∧ g("'a'")]
         println(remove2_2) // [:- f("'e'") ∧ g("'a'")]
@@ -448,30 +459,28 @@ class PermSpec2 {
         for (r in rules1) state1.add(r)
         println("STATE 1.1:")
         printStateProofs(state1)
-        assertEquals(setOf(
-            "f('e')".f, "g('a')".f, "h('b')".f, "f('i')".f, "g('f')".f
-        ), state1.allFacts().toSet())
+        assertEquals(
+            setOf("f('e')".f, "g('a')".f, "h('b')".f, "f('i')".f, "g('f')".f),
+            state1.allFacts().toSet(),
+        )
 
         for (r in remove1) state1.remove(r) // [:- f("'e'") ∧ g("'a'"), :- h("'b'") ∧ h("'b'")]
         println("STATE 1.2:")
         printStateProofs(state1)
-        assertEquals(setOf(
-            "f('i')".f, "g('f')".f
-        ), state1.allFacts().toSet())
+        assertEquals(setOf("f('i')".f, "g('f')".f), state1.allFacts().toSet())
 
         for (r in add1) state1.add(r) // [:- f("'e'") ∧ g("'a'")]
         println("STATE 1.3:")
         printStateProofs(state1)
-        assertEquals(setOf(
-            "f('e')".f, "g('a')".f, "f('i')".f, "g('f')".f
-        ), state1.allFacts().toSet())
+        assertEquals(
+            setOf("f('e')".f, "g('a')".f, "f('i')".f, "g('f')".f),
+            state1.allFacts().toSet(),
+        )
 
         for (r in remove1_2) state1.remove(r) // [:- f("'e'") ∧ g("'a'")]
         println("STATE 1.4:")
         printStateProofs(state1)
-        assertEquals(setOf(
-            "f('i')".f, "g('f')".f
-        ), state1.allFacts().toSet())
+        assertEquals(setOf("f('i')".f, "g('f')".f), state1.allFacts().toSet())
 
         val state2 = Rho()
         for (r in rules2) state2.add(r)
@@ -483,18 +492,20 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun `regression 10`() {
+    @Test
+    fun `regression 10`() {
         // [∀E. f1_2(E) :- f1_3("h"),
         // :- f1_3("e") ∧ f1_2("e"),
         // ∀F. f1_1(F) :- f1_3(F) ∧ f1_3(F),
         // ∀A. f1_3(A) :- f1_1("h")]
 
-        val rules1 = listOf(
-            "f(E) :- g('h')".r,
-            ":- g('e') ∧ f('e')".r,
-            "h(F) :- g(F) ∧ g(F)".r,
-            "g(A) :- h('h')".r
-        )
+        val rules1 =
+            listOf(
+                "f(E) :- g('h')".r,
+                ":- g('e') ∧ f('e')".r,
+                "h(F) :- g(F) ∧ g(F)".r,
+                "g(A) :- h('h')".r,
+            )
 
         val rng = SplittableRandom(0)
         val remove1 = rules1.take(rules1.size / 2)
@@ -505,7 +516,11 @@ class PermSpec2 {
         println(add1) // [∀E. f(E) :- g("'h'")]
         println(remove1_2) // [∀E. f(E) :- g("'h'")]
 
-        val rules2 = rules1.shuffled(rng) // [:- g("'e'") ∧ f("'e'"), ∀F. h(F) :- g(F) ∧ g(F), ∀A. g(A) :- h("'h'"), ∀E. f(E) :- g("'h'")]
+        val rules2 =
+            rules1.shuffled(
+                rng
+            ) // [:- g("'e'") ∧ f("'e'"), ∀F. h(F) :- g(F) ∧ g(F), ∀A. g(A) :- h("'h'"), ∀E. f(E) :-
+        // g("'h'")]
         val remove2 = remove1.shuffled(rng) // [∀E. f(E) :- g("'h'"), :- g("'e'") ∧ f("'e'")]
         val add2 = add1.shuffled(rng) // [∀E. f(E) :- g("'h'")]
         val remove2_2 = remove1_2.shuffled(rng) // [∀E. f(E) :- g("'h'")]
@@ -517,10 +532,16 @@ class PermSpec2 {
 
         val state1 = Rho()
         for (r in rules1) state1.add(r)
-        assertEquals(setOf(
-            // g('e'), f('e'), h('h'), g('h')
-            "g('e')".f, "f('e')".f, "h('h')".f, "g('h')".f
-        ), state1.allFacts().toSet())
+        assertEquals(
+            setOf(
+                // g('e'), f('e'), h('h'), g('h')
+                "g('e')".f,
+                "f('e')".f,
+                "h('h')".f,
+                "g('h')".f,
+            ),
+            state1.allFacts().toSet(),
+        )
         println("STATE 1.1:")
         printStateProofs(state1)
 
@@ -545,7 +566,8 @@ class PermSpec2 {
         assertEquals(state1.allFacts().toSet(), state2.allFacts().toSet())
     }
 
-    @Test fun test() {
+    @Test
+    fun test() {
         val state = Rho()
 
         val facts = mutableSetOf<Rho.Fact>()
@@ -572,7 +594,10 @@ class PermSpec2 {
         facts.add("group(player1, 'donator.tier1')".f)
         assertEquals(facts, state.allFacts().toSet())
 
-        state.add("group(P, 'everyone') :- permit(P, 'cc.commands.msg') ∧ permit(P, 'cc.commands.reply')".r)
+        state.add(
+            "group(P, 'everyone') :- permit(P, 'cc.commands.msg') ∧ permit(P, 'cc.commands.reply')"
+                .r
+        )
         facts.add("permit(player1, 'cc.commands.msg')".f)
         facts.add("permit(player1, 'cc.commands.reply')".f)
         assertEquals(facts, state.allFacts().toSet())
@@ -620,7 +645,12 @@ class PermSpec2 {
         val parts = term.split("(")
         val name = parts[0].trim()
         val argsStr = parts[1].trim().dropLast(1).trim()
-        val args = if (argsStr != "") parts[1].trim().dropLast(1).split(",").map { parseArg(it) } else emptyList()
+        val args =
+            if (argsStr != "") {
+                parts[1].trim().dropLast(1).split(",").map { parseArg(it) }
+            } else {
+                emptyList()
+            }
         return Rho.Term(name, Arr.fromList(args))
     }
 

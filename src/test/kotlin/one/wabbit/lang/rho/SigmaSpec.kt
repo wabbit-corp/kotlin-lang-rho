@@ -1,19 +1,19 @@
-//package lang.rho
+// package lang.rho
 //
-//import one.wabbit.data.Arr
-//import one.wabbit.random.gen.Gen
-//import one.wabbit.random.gen.Tests
-//import one.wabbit.random.gen.sampleUnbounded
-//import one.wabbit.data.shuffled
-//import java.util.*
-//import kotlin.test.Test
-//import kotlin.test.assertEquals
-//import kotlin.test.assertTrue
+// import one.wabbit.data.Arr
+// import one.wabbit.random.gen.Gen
+// import one.wabbit.random.gen.Tests
+// import one.wabbit.random.gen.sampleUnbounded
+// import one.wabbit.data.shuffled
+// import java.util.*
+// import kotlin.test.Test
+// import kotlin.test.assertEquals
+// import kotlin.test.assertTrue
 //
-//const val MAX_TEST_ARITY = 2
-//const val MAX_TEST_TERMS = 4
+// const val MAX_TEST_ARITY = 2
+// const val MAX_TEST_TERMS = 4
 //
-//class PermSpec2 {
+// class PermSpec2 {
 //    private val rng = SplittableRandom()
 //    val genConst: Gen<String> =
 //        Gen.int(0 ..< 10).map { ('a' + it).toString().let {
@@ -438,7 +438,8 @@
 //        val add2 = add1.shuffled(rng)
 //        val remove2_2 = remove1_2.shuffled(rng)
 //
-//        println(rules2) // [:- h("'b'") ∧ h("'b'"), :- f("'i'") ∧ g("'f'"), ∀E, A. g(E) ∧ f(A) :- g(E), :- f("'e'") ∧ g("'a'")]
+//        println(rules2) // [:- h("'b'") ∧ h("'b'"), :- f("'i'") ∧ g("'f'"), ∀E, A. g(E) ∧ f(A) :-
+// g(E), :- f("'e'") ∧ g("'a'")]
 //        println(remove2) // [:- f("'e'") ∧ g("'a'"), :- h("'b'") ∧ h("'b'")]
 //        println(add2) // [:- f("'e'") ∧ g("'a'")]
 //        println(remove2_2) // [:- f("'e'") ∧ g("'a'")]
@@ -505,7 +506,8 @@
 //        println(add1) // [∀E. f(E) :- g("'h'")]
 //        println(remove1_2) // [∀E. f(E) :- g("'h'")]
 //
-//        val rules2 = rules1.shuffled(rng) // [:- g("'e'") ∧ f("'e'"), ∀F. h(F) :- g(F) ∧ g(F), ∀A. g(A) :- h("'h'"), ∀E. f(E) :- g("'h'")]
+//        val rules2 = rules1.shuffled(rng) // [:- g("'e'") ∧ f("'e'"), ∀F. h(F) :- g(F) ∧ g(F), ∀A.
+// g(A) :- h("'h'"), ∀E. f(E) :- g("'h'")]
 //        val remove2 = remove1.shuffled(rng) // [∀E. f(E) :- g("'h'"), :- g("'e'") ∧ f("'e'")]
 //        val add2 = add1.shuffled(rng) // [∀E. f(E) :- g("'h'")]
 //        val remove2_2 = remove1_2.shuffled(rng) // [∀E. f(E) :- g("'h'")]
@@ -572,7 +574,8 @@
 //        facts.add("group(player1, 'donator.tier1')".f)
 //        assertEquals(facts, state.allFacts().toSet())
 //
-//        state.add("group(P, 'everyone') :- permit(P, 'cc.commands.msg') ∧ permit(P, 'cc.commands.reply')".r)
+//        state.add("group(P, 'everyone') :- permit(P, 'cc.commands.msg') ∧ permit(P,
+// 'cc.commands.reply')".r)
 //        facts.add("permit(player1, 'cc.commands.msg')".f)
 //        facts.add("permit(player1, 'cc.commands.reply')".f)
 //        assertEquals(facts, state.allFacts().toSet())
@@ -620,7 +623,8 @@
 //        val parts = term.split("(")
 //        val name = parts[0].trim()
 //        val argsStr = parts[1].trim().dropLast(1).trim()
-//        val args = if (argsStr != "") parts[1].trim().dropLast(1).split(",").map { parseArg(it) } else emptyList()
+//        val args = if (argsStr != "") parts[1].trim().dropLast(1).split(",").map { parseArg(it) }
+// else emptyList()
 //        return Rho.Term(name, Arr.fromList(args))
 //    }
 //
@@ -632,4 +636,4 @@
 //            Rho.Arg.Const(arg)
 //        }
 //    }
-//}
+// }

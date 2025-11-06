@@ -1,12 +1,15 @@
 package one.wabbit.lang.rho
 
-import one.wabbit.data.*
-import java.util.*
 import kotlin.collections.ArrayDeque
 import kotlin.collections.LinkedHashSet
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.set
+import one.wabbit.data.Arr
+import one.wabbit.data.ArrMap
+import one.wabbit.data.ConsList
+import one.wabbit.data.arrMapOf
+import one.wabbit.data.emptyConsList
 
 internal const val DEBUG = false
 internal const val CHECK_INVARIANT = false
@@ -15,20 +18,20 @@ internal const val CHECK_INVARIANT = false
 // Unicode logical and: ∧
 
 internal typealias PredicateName = String
+
 internal typealias SubstMap = ArrMap<Rho.Arg.Var, Rho.Arg.Const>
 
 class Rho {
-    data class Fact(
-        @JvmField val predicate: PredicateName,
-        @JvmField val args: Arr<String>
-    )
-    {
+    data class Fact(@JvmField val predicate: PredicateName, @JvmField val args: Arr<String>) {
         override fun toString(): String {
             val freeVarCount = args.count { it == null }
-            val prefix = if (freeVarCount == 0) "" else {
-                val vars = (0 until freeVarCount).map { ('A' + it).toChar() }
-                "∀${vars.joinToString(", ")}. "
-            }
+            val prefix =
+                if (freeVarCount == 0) {
+                    ""
+                } else {
+                    val vars = (0 until freeVarCount).map { ('A' + it).toChar() }
+                    "∀${vars.joinToString(", ")}. "
+                }
             val args = mutableListOf<String>()
             var j = 0
             for (i in this.args.indices) {
@@ -36,19 +39,23 @@ class Rho {
                 if (arg == null) {
                     args.add(('A' + j).toString())
                     j++
-                }
-                else {
+                } else {
                     args.add(arg)
                 }
             }
 
-            val argsStr = if (args.isEmpty()) ""
-            else "(${args.joinToString(", ")})"
+            val argsStr =
+                if (args.isEmpty()) {
+                    ""
+                } else {
+                    "(${args.joinToString(", ")})"
+                }
 
             return "$prefix$predicate$argsStr"
         }
 
         private var _hashCode: Long = 0x100000000L
+
         override fun hashCode(): Int {
             var h = _hashCode
             if (h == 0x100000000L) {
@@ -60,28 +67,34 @@ class Rho {
         }
     }
 
-    data class Rule(
-        @JvmField val antecedents: Arr<Term>,
-        @JvmField val consequents: Arr<Term>
-    )
-    {
+    data class Rule(@JvmField val antecedents: Arr<Term>, @JvmField val consequents: Arr<Term>) {
         init {
             if (CHECK_INVARIANT) {
                 require(consequents.isNotEmpty())
                 // TODO: Come up with a way to avoid this:
                 val antecedentFreeVars = antecedents.toList().flatMap { it.freeVars() }.toSet()
-                val consequentFreeVars = consequents.toList().flatMap { it.freeVars() }.toSet() - antecedentFreeVars
+                val consequentFreeVars =
+                    consequents.toList().flatMap { it.freeVars() }.toSet() - antecedentFreeVars
                 require(consequentFreeVars.isEmpty())
             }
         }
 
         override fun toString(): String {
             val antecedentFreeVars = antecedents.toList().flatMap { it.freeVars() }.toSet()
-            val consequentFreeVars = consequents.toList().flatMap { it.freeVars() }.toSet() - antecedentFreeVars
-            val antecedentPrefix = if (antecedentFreeVars.isEmpty()) ""
-            else "∀${antecedentFreeVars.joinToString(", ")}. "
-            val consequentPrefix = if (consequentFreeVars.isEmpty()) ""
-            else "∀${consequentFreeVars.joinToString(", ")}. "
+            val consequentFreeVars =
+                consequents.toList().flatMap { it.freeVars() }.toSet() - antecedentFreeVars
+            val antecedentPrefix =
+                if (antecedentFreeVars.isEmpty()) {
+                    ""
+                } else {
+                    "∀${antecedentFreeVars.joinToString(", ")}. "
+                }
+            val consequentPrefix =
+                if (consequentFreeVars.isEmpty()) {
+                    ""
+                } else {
+                    "∀${consequentFreeVars.joinToString(", ")}. "
+                }
 
             val antecedents = antecedents.toList().joinToString(" ∧ ") { it.toString() }
             val consequents = consequents.toList().joinToString(" ∧ ") { it.toString() }
@@ -89,6 +102,7 @@ class Rho {
         }
 
         private var _hashCode: Long = 0x100000000L
+
         override fun hashCode(): Int {
             var h = _hashCode
             if (h == 0x100000000L) {
@@ -100,11 +114,7 @@ class Rho {
         }
     }
 
-    data class Term(
-        @JvmField val predicate: PredicateName,
-        @JvmField val args: Arr<Arg>
-    )
-    {
+    data class Term(@JvmField val predicate: PredicateName, @JvmField val args: Arr<Arg>) {
         fun toFact(): Fact {
             val newArgs = args.mapOrNull { (it as? Arg.Const)?.value }
             if (newArgs == null) error("Cannot convert term to fact: $this")
@@ -128,7 +138,7 @@ class Rho {
 
             val size = args.size
             // Most unifications fail, so we optimize for that case.
-            for (i in 0..size-1) {
+            for (i in 0..size - 1) {
                 when (val arg = args[i]) {
                     is Arg.Var -> {}
                     is Arg.Const -> if (arg.value != fact.args[i]) return null
@@ -136,12 +146,12 @@ class Rho {
             }
 
             val result = mutableMapOf<Arg.Var, Arg.Const>()
-            for (i in 0..size-1) {
+            for (i in 0..size - 1) {
                 val arg = args[i]
                 val factArg = fact.args[i]
                 when (arg) {
                     is Arg.Var -> result[arg] = Arg.Const(factArg)
-                    is Arg.Const -> { } // We don't need to do anything
+                    is Arg.Const -> {} // We don't need to do anything
                 }
             }
             return result
@@ -155,7 +165,7 @@ class Rho {
             if (size != factArgs.size) return null
 
             // Most unifications fail, so we optimize for that case.
-            for (i in 0..size-1) {
+            for (i in 0..size - 1) {
                 when (val arg = thisArgs[i]) {
                     is Arg.Var -> {
                         val value = map[arg]
@@ -166,12 +176,12 @@ class Rho {
             }
 
             var result = map
-            for (i in 0..size-1) {
+            for (i in 0..size - 1) {
                 val arg = thisArgs[i]
                 val factArg = factArgs[i]
                 when (arg) {
                     is Arg.Var -> result = result.put(arg, Arg.Const(factArg))
-                    is Arg.Const -> { }
+                    is Arg.Const -> {}
                 }
             }
             return result
@@ -192,32 +202,40 @@ class Rho {
             return true
         }
 
-        fun subst(subst: Map<Arg.Var, Arg.Const>): Term {
-            return Term(predicate, args.map {
-                when (it) {
-                    is Arg.Var -> subst[it] ?: it
-                    is Arg.Const -> it
-                }
-            })
-        }
+        fun subst(subst: Map<Arg.Var, Arg.Const>): Term =
+            Term(
+                predicate,
+                args.map {
+                    when (it) {
+                        is Arg.Var -> subst[it] ?: it
+                        is Arg.Const -> it
+                    }
+                },
+            )
 
         fun subst(subst: ArrMap<Arg.Var, Arg.Const>): Term {
-            val newArgs = args.map {
-                when (it) {
-                    is Arg.Var -> subst[it] ?: it
-                    is Arg.Const -> it
+            val newArgs =
+                args.map {
+                    when (it) {
+                        is Arg.Var -> subst[it] ?: it
+                        is Arg.Const -> it
+                    }
                 }
-            }
             return Term(predicate, newArgs)
         }
 
         override fun toString(): String {
-            val argsStr = if (args.isEmpty()) ""
-            else "(${args.toList().joinToString(", ")})"
+            val argsStr =
+                if (args.isEmpty()) {
+                    ""
+                } else {
+                    "(${args.toList().joinToString(", ")})"
+                }
             return "$predicate$argsStr"
         }
 
         private var _hashCode: Long = 0x100000000L
+
         override fun hashCode(): Int {
             val h = _hashCode
             if (h == 0x100000000L) {
@@ -238,29 +256,29 @@ class Rho {
 
             override fun toString(): String = name
         }
+
         data class Const(val value: String) : Arg {
             override fun toString(): String = value
         }
     }
 
     sealed interface Node
-    class RuleNode(
-        val id: Rule,
-        val downstreamFacts: LinkedHashSet<FactNode> = LinkedHashSet()
-    ) : Node {
+
+    class RuleNode(val id: Rule, val downstreamFacts: LinkedHashSet<FactNode> = LinkedHashSet()) :
+        Node {
         override fun toString(): String = id.toString()
     }
 
     class FactProof(
         val isGuaranteedAcyclic: Boolean,
         internal val rule: RuleNode,
-        val usedFacts: ConsList<FactNode>
+        val usedFacts: ConsList<FactNode>,
     )
 
     class FactNode(
         val id: Fact,
         val upstreamProofs: LinkedHashMap<RuleNode, FactProof> = LinkedHashMap(),
-        val downstreamFacts: LinkedHashSet<FactNode> = LinkedHashSet()
+        val downstreamFacts: LinkedHashSet<FactNode> = LinkedHashSet(),
     ) : Node {
         override fun toString(): String = id.toString()
     }
@@ -287,6 +305,7 @@ class Rho {
             val otherRef = seenRules.put(ruleNode.id, ruleNode)
             check(otherRef == null || otherRef === ruleNode) { "Duplicate rule" }
         }
+
         fun checkUniqueness(factNode: FactNode) {
             val otherRef = seenFacts.put(factNode.id, factNode)
             check(otherRef == null || otherRef === factNode) { "Duplicate fact" }
@@ -298,9 +317,15 @@ class Rho {
             check(ruleNode.id == ruleId.key) { "RuleNode rule mismatch" }
             for (downstreamFactNode in ruleNode.downstreamFacts) {
                 checkUniqueness(downstreamFactNode)
-                check(downstreamFactNode.upstreamProofs.contains(ruleNode)) { "FactNode upstream does not contain RuleNode" }
-                check(downstreamFactNode.id.predicate in consequentToRule) { "FactNode predicate not in consequentToRule" }
-                check(downstreamFactNode.id.predicate in facts) { "FactNode predicate not in facts" }
+                check(downstreamFactNode.upstreamProofs.contains(ruleNode)) {
+                    "FactNode upstream does not contain RuleNode"
+                }
+                check(downstreamFactNode.id.predicate in consequentToRule) {
+                    "FactNode predicate not in consequentToRule"
+                }
+                check(downstreamFactNode.id.predicate in facts) {
+                    "FactNode predicate not in facts"
+                }
                 check(downstreamFactNode.id in facts[downstreamFactNode.id.predicate]!!) {
                     val ruleIsInUpstream = ruleNode in downstreamFactNode.upstreamProofs
                     "Rule ${ruleNode.id} downstream fact ${downstreamFactNode.id} is not contained in the known facts. Rule is in upstream: $ruleIsInUpstream"
@@ -318,22 +343,32 @@ class Rho {
                     when (upstreamRuleNode) {
                         is RuleNode -> {
                             checkUniqueness(upstreamRuleNode)
-                            check(upstreamRuleNode.downstreamFacts.contains(factNode)) { "RuleNode downstream does not contain FactNode" }
+                            check(upstreamRuleNode.downstreamFacts.contains(factNode)) {
+                                "RuleNode downstream does not contain FactNode"
+                            }
                         }
-                        // is FactNode -> check(upstreamRuleNode.downstream.contains(node)) { "FactNode downstream does not contain FactNode" }
+                    // is FactNode -> check(upstreamRuleNode.downstream.contains(node)) { "FactNode
+                    // downstream does not contain FactNode" }
                     }
                     for (upstreamFactNode in proof.usedFacts) {
                         checkUniqueness(upstreamFactNode)
-                        check(upstreamFactNode.downstreamFacts.contains(factNode)) { "FactNode downstream does not contain FactNode" }
+                        check(upstreamFactNode.downstreamFacts.contains(factNode)) {
+                            "FactNode downstream does not contain FactNode"
+                        }
                     }
                 }
 
                 for (downstreamFactNode in factNode.downstreamFacts) {
                     checkUniqueness(downstreamFactNode)
-                    check(downstreamFactNode.upstreamProofs.any { it.value.usedFacts.contains(factNode) }) { "FactNode upstream does not contain FactNode" }
+                    check(
+                        downstreamFactNode.upstreamProofs.any {
+                            it.value.usedFacts.contains(factNode)
+                        }
+                    ) {
+                        "FactNode upstream does not contain FactNode"
+                    }
                 }
             }
-
         }
     }
 
@@ -401,9 +436,13 @@ class Rho {
 
             removeProofVia(factNode, ruleNode)
 
-            if (DEBUG) println("  Processing fact `${factNode.id}`: ${factNode.upstreamProofs.map {
-                it.key.id.toString() to it.value.usedFacts.map { it.id.toString() }
-            }}")
+            if (DEBUG) {
+                println(
+                    "  Processing fact `${factNode.id}`: ${factNode.upstreamProofs.map {
+                        it.key.id.toString() to it.value.usedFacts.map { it.id.toString() }
+                    }}"
+                )
+            }
 
             if (factNode.upstreamProofs.any { it.value.isGuaranteedAcyclic }) continue
 
@@ -417,7 +456,10 @@ class Rho {
                 for (consequent in upstreamRule.id.consequents) {
                     if (upstreamRule === ruleNode) continue
                     val subst = consequent.unify(factNode.id, arrMapOf()) ?: continue
-                    if (DEBUG) println("    Marking `${upstreamRule.id}` dirty because `${factNode.id}` got removed")
+                    if (DEBUG)
+                        println(
+                            "    Marking `${upstreamRule.id}` dirty because `${factNode.id}` got removed"
+                        )
                     rerunRules.add(upstreamRule.id to subst)
                 }
 
@@ -430,7 +472,10 @@ class Rho {
 
             for (downstreamFactNode in factNode.downstreamFacts.toList()) {
                 var removedProof = false
-                val it = downstreamFactNode.upstreamProofs.filter { it.value.usedFacts.contains(factNode) }
+                val it =
+                    downstreamFactNode.upstreamProofs.filter {
+                        it.value.usedFacts.contains(factNode)
+                    }
                 for (p in it) {
                     removeProofVia(downstreamFactNode, p.key)
                     if (p.key != ruleNode) rerunRules.add(p.key.id to arrMapOf())
@@ -441,7 +486,10 @@ class Rho {
                 }
                 if (removedProof || downstreamFactNode !in factChecked) {
                     factCheckQueue.add(downstreamFactNode)
-                    if (DEBUG) println("    Adding downstream fact `${downstreamFactNode.id}` to the queue")
+                    if (DEBUG)
+                        println(
+                            "    Adding downstream fact `${downstreamFactNode.id}` to the queue"
+                        )
                 }
             }
         }
@@ -468,8 +516,8 @@ class Rho {
             println("  Current facts: ${allFacts()}")
         }
 
-//        val queue = ArrayDeque<Rule>()
-//        for (r in rerunRules) queue.add(r)
+        //        val queue = ArrayDeque<Rule>()
+        //        for (r in rerunRules) queue.add(r)
         processQueue(ArrayDeque(rerunRules))
 
         val it = removedFacts.iterator()
@@ -486,24 +534,28 @@ class Rho {
 
     private fun processQueue(queue: ArrayDeque<Pair<Rho.Rule, SubstMap>>): Set<Fact> {
         val inQueue = HashSet<Rho.Rule>()
-//        var maxQueueSize = queue.size
-//        println("Initial queue size: ${queue.size}. Unique rules = ${queue.map { it.first }.toSet().size} / ${rules.size}")
-        for ((rule, map) in queue)
-            if(map.isEmpty()) inQueue.add(rule)
+        //        var maxQueueSize = queue.size
+        //        println("Initial queue size: ${queue.size}. Unique rules = ${queue.map { it.first
+        // }.toSet().size} / ${rules.size}")
+        for ((rule, map) in queue) {
+            if (map.isEmpty()) inQueue.add(rule)
+        }
 
         val addedFacts: MutableSet<Fact> = mutableSetOf()
 
         while (queue.isNotEmpty()) {
-//            maxQueueSize = maxOf(maxQueueSize, queue.size)
+            //            maxQueueSize = maxOf(maxQueueSize, queue.size)
             val (headRule, initialSubst) = queue.removeFirst()
             if (initialSubst.isEmpty()) inQueue.remove(headRule)
 
             val newFacts = mutableMapOf<Fact, ConsList<FactNode>>()
+
             fun process(
                 usedFacts: ConsList<FactNode>,
-                index: Int, antecedents: Arr<Term>,
+                index: Int,
+                antecedents: Arr<Term>,
                 mapping: ArrMap<Arg.Var, Arg.Const>,
-                consequents: Arr<Term>
+                consequents: Arr<Term>,
             ) {
                 if (index == antecedents.size) {
                     for (consequent in consequents) {
@@ -532,20 +584,25 @@ class Rho {
                 val alreadyExists = facts[fact.predicate]?.containsKey(fact) ?: false
                 val factNode = factNodeOf(fact)
 
-                val alreadyProvenViaSameRule = alreadyExists && factNode.upstreamProofs.containsKey(rules[headRule]!!)
+                val alreadyProvenViaSameRule =
+                    alreadyExists && factNode.upstreamProofs.containsKey(rules[headRule]!!)
                 if (alreadyProvenViaSameRule) continue
                 // if (alreadyExists) continue
 
-                factNode.upstreamProofs[headRuleNode] = FactProof(
-                    isGuaranteedAcyclic = !alreadyExists || usedFacts.isEmpty(),
-                    headRuleNode, usedFacts)
+                factNode.upstreamProofs[headRuleNode] =
+                    FactProof(
+                        isGuaranteedAcyclic = !alreadyExists || usedFacts.isEmpty(),
+                        headRuleNode,
+                        usedFacts,
+                    )
                 headRuleNode.downstreamFacts.add(factNode)
 
                 for (usedFactNode in usedFacts) {
                     usedFactNode.downstreamFacts.add(factNode)
                 }
 
-                if (DEBUG) println("    Adding fact `$fact` (new parents = ${factNode.upstreamProofs})")
+                if (DEBUG)
+                    println("    Adding fact `$fact` (new parents = ${factNode.upstreamProofs})")
 
                 if (!alreadyExists) {
                     for (r in antecedentToRule[fact.predicate] ?: emptyList()) {
@@ -564,11 +621,8 @@ class Rho {
         return addedFacts
     }
 
-    operator fun get(fact: Fact): Boolean {
-        return facts[fact.predicate]?.containsKey(fact) ?: false
-    }
+    operator fun get(fact: Fact): Boolean = facts[fact.predicate]?.containsKey(fact) ?: false
 
-    fun allFacts(): List<Fact> = facts.flatMap { (predicate, facts) ->
-        facts.keys.map { Fact(predicate, it.args) }
-    }
+    fun allFacts(): List<Fact> =
+        facts.flatMap { (predicate, facts) -> facts.keys.map { Fact(predicate, it.args) } }
 }
