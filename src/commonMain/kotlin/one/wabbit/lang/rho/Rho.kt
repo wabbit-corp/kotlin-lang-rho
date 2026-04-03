@@ -266,9 +266,19 @@ class Rho {
     sealed interface Node
 
     data class ArgKey(val position: Int, val value: String)
+    data class PairKey(
+        val position1: Int,
+        val value1: String,
+        val position2: Int,
+        val value2: String,
+    )
 
-    class AntecedentPlan(val term: Term, val constantKeys: List<ArgKey>) {
-        val specificity: Int = constantKeys.size
+    class AntecedentPlan(
+        val term: Term,
+        val singleConstantKeys: List<ArgKey>,
+        val pairConstantKeys: List<PairKey>,
+    ) {
+        val specificity: Int = pairConstantKeys.size * 2 + singleConstantKeys.size
     }
 
     class AntecedentTrigger(val rule: Rule, val antecedent: AntecedentPlan)
@@ -298,40 +308,125 @@ class Rho {
 
     val rules: MutableMap<Rule, RuleNode> = mutableMapOf()
     val facts: MutableMap<PredicateName, MutableMap<Fact, FactNode>> = mutableMapOf()
-    private val factConstIndex:
+    private val factSingleIndex:
         MutableMap<PredicateName, MutableMap<ArgKey, LinkedHashSet<FactNode>>> = mutableMapOf()
+    private val factPairIndex:
+        MutableMap<PredicateName, MutableMap<PairKey, LinkedHashSet<FactNode>>> = mutableMapOf()
+    private val pendingFactsPool = ArrayDeque<LinkedHashMap<Fact, ConsList<FactNode>>>()
+
+    private fun resolveArgValue(arg: Arg, mapping: ArrMap<Arg.Var, Arg.Const>): String? =
+        when (arg) {
+            is Arg.Const -> arg.value
+            is Arg.Var -> mapping[arg]?.value
+        }
+
+    private fun rentPendingFacts(capacity: Int): LinkedHashMap<Fact, ConsList<FactNode>> =
+        if (pendingFactsPool.isNotEmpty()) {
+            pendingFactsPool.removeLast().also { it.clear() }
+        } else {
+            LinkedHashMap(maxOf(4, capacity))
+        }
+
+    private fun returnPendingFacts(map: LinkedHashMap<Fact, ConsList<FactNode>>) {
+        map.clear()
+        if (pendingFactsPool.size < 8) {
+            pendingFactsPool.addLast(map)
+        }
+    }
 
     private fun buildAntecedentPlan(term: Term): AntecedentPlan {
-        val keys = mutableListOf<ArgKey>()
+        val singleKeys = mutableListOf<ArgKey>()
         for (i in term.args.indices) {
             when (val arg = term.args[i]) {
-                is Arg.Const -> keys.add(ArgKey(i, arg.value))
+                is Arg.Const -> singleKeys.add(ArgKey(i, arg.value))
                 is Arg.Var -> {}
             }
         }
-        return AntecedentPlan(term, keys)
+
+        val pairKeys = mutableListOf<PairKey>()
+        for (firstIndex in 0 until singleKeys.size - 1) {
+            val firstKey = singleKeys[firstIndex]
+            for (secondIndex in firstIndex + 1 until singleKeys.size) {
+                val secondKey = singleKeys[secondIndex]
+                pairKeys.add(
+                    PairKey(
+                        firstKey.position,
+                        firstKey.value,
+                        secondKey.position,
+                        secondKey.value,
+                    )
+                )
+            }
+        }
+
+        return AntecedentPlan(term, singleKeys, pairKeys)
     }
 
     private fun addFactConstIndex(factNode: FactNode) {
-        val predicateIndex = factConstIndex.getOrPut(factNode.id.predicate) { mutableMapOf() }
-        for (i in factNode.id.args.indices) {
-            val key = ArgKey(i, factNode.id.args[i])
-            predicateIndex.getOrPut(key) { LinkedHashSet() }.add(factNode)
+        val singlePredicateIndex = factSingleIndex.getOrPut(factNode.id.predicate) { mutableMapOf() }
+        val pairPredicateIndex = factPairIndex.getOrPut(factNode.id.predicate) { mutableMapOf() }
+        val args = factNode.id.args
+
+        for (i in args.indices) {
+            val key = ArgKey(i, args[i])
+            singlePredicateIndex.getOrPut(key) { LinkedHashSet() }.add(factNode)
+        }
+
+        for (firstIndex in 0 until args.size - 1) {
+            val firstValue = args[firstIndex]
+            for (secondIndex in firstIndex + 1 until args.size) {
+                val secondValue = args[secondIndex]
+                val pairKey =
+                    PairKey(
+                        firstIndex,
+                        firstValue,
+                        secondIndex,
+                        secondValue,
+                    )
+                pairPredicateIndex.getOrPut(pairKey) { LinkedHashSet() }.add(factNode)
+            }
         }
     }
 
     private fun removeFactConstIndex(factNode: FactNode) {
-        val predicateIndex = factConstIndex[factNode.id.predicate] ?: return
-        for (i in factNode.id.args.indices) {
-            val key = ArgKey(i, factNode.id.args[i])
-            val bucket = predicateIndex[key] ?: continue
-            bucket.remove(factNode)
-            if (bucket.isEmpty()) {
-                predicateIndex.remove(key)
+        val args = factNode.id.args
+
+        factSingleIndex[factNode.id.predicate]?.let { predicateIndex ->
+            for (i in args.indices) {
+                val key = ArgKey(i, args[i])
+                val bucket = predicateIndex[key] ?: continue
+                bucket.remove(factNode)
+                if (bucket.isEmpty()) {
+                    predicateIndex.remove(key)
+                }
+            }
+            if (predicateIndex.isEmpty()) {
+                factSingleIndex.remove(factNode.id.predicate)
             }
         }
-        if (predicateIndex.isEmpty()) {
-            factConstIndex.remove(factNode.id.predicate)
+
+        factPairIndex[factNode.id.predicate]?.let { predicateIndex ->
+            for (firstIndex in 0 until args.size - 1) {
+                val firstValue = args[firstIndex]
+                for (secondIndex in firstIndex + 1 until args.size) {
+                    val secondValue = args[secondIndex]
+                    val pairKey =
+                        PairKey(
+                            firstIndex,
+                            firstValue,
+                            secondIndex,
+                            secondValue,
+                        )
+                    val bucket = predicateIndex[pairKey] ?: continue
+                    bucket.remove(factNode)
+                    if (bucket.isEmpty()) {
+                        predicateIndex.remove(pairKey)
+                    }
+                }
+            }
+            if (predicateIndex.isEmpty()) {
+                factPairIndex.remove(factNode.id.predicate)
+            }
         }
     }
 
@@ -343,8 +438,11 @@ class Rho {
 
     private val antecedentAnyToRule: MutableMap<PredicateName, MutableList<AntecedentTrigger>> =
         mutableMapOf()
-    private val antecedentConstToRule:
+    private val antecedentSingleToRule:
         MutableMap<PredicateName, MutableMap<ArgKey, MutableList<AntecedentTrigger>>> =
+        mutableMapOf()
+    private val antecedentPairToRule:
+        MutableMap<PredicateName, MutableMap<PairKey, MutableList<AntecedentTrigger>>> =
         mutableMapOf()
     private val consequentToRule: MutableMap<PredicateName, MutableSet<Rule>> = mutableMapOf()
 
@@ -427,14 +525,20 @@ class Rho {
 
     private fun addAntecedentTrigger(antecedent: AntecedentPlan, rule: Rule) {
         val trigger = AntecedentTrigger(rule, antecedent)
-        if (antecedent.constantKeys.isEmpty()) {
-            antecedentAnyToRule.getOrPut(antecedent.term.predicate) { mutableListOf() }.add(trigger)
-        } else {
+        if (antecedent.pairConstantKeys.isNotEmpty()) {
             val predicateIndex =
-                antecedentConstToRule.getOrPut(antecedent.term.predicate) { mutableMapOf() }
-            for (key in antecedent.constantKeys) {
+                antecedentPairToRule.getOrPut(antecedent.term.predicate) { mutableMapOf() }
+            for (key in antecedent.pairConstantKeys) {
                 predicateIndex.getOrPut(key) { mutableListOf() }.add(trigger)
             }
+        } else if (antecedent.singleConstantKeys.isNotEmpty()) {
+            val predicateIndex =
+                antecedentSingleToRule.getOrPut(antecedent.term.predicate) { mutableMapOf() }
+            for (key in antecedent.singleConstantKeys) {
+                predicateIndex.getOrPut(key) { mutableListOf() }.add(trigger)
+            }
+        } else {
+            antecedentAnyToRule.getOrPut(antecedent.term.predicate) { mutableListOf() }.add(trigger)
         }
     }
 
@@ -443,16 +547,9 @@ class Rho {
             removeAll { it.rule == rule && it.antecedent.term == antecedent.term }
         }
 
-        if (antecedent.constantKeys.isEmpty()) {
-            antecedentAnyToRule[antecedent.term.predicate]?.let { bucket ->
-                bucket.removeMatching()
-                if (bucket.isEmpty()) {
-                    antecedentAnyToRule.remove(antecedent.term.predicate)
-                }
-            }
-        } else {
-            antecedentConstToRule[antecedent.term.predicate]?.let { predicateIndex ->
-                for (key in antecedent.constantKeys) {
+        if (antecedent.pairConstantKeys.isNotEmpty()) {
+            antecedentPairToRule[antecedent.term.predicate]?.let { predicateIndex ->
+                for (key in antecedent.pairConstantKeys) {
                     predicateIndex[key]?.let { bucket ->
                         bucket.removeMatching()
                         if (bucket.isEmpty()) {
@@ -461,7 +558,28 @@ class Rho {
                     }
                 }
                 if (predicateIndex.isEmpty()) {
-                    antecedentConstToRule.remove(antecedent.term.predicate)
+                    antecedentPairToRule.remove(antecedent.term.predicate)
+                }
+            }
+        } else if (antecedent.singleConstantKeys.isNotEmpty()) {
+            antecedentSingleToRule[antecedent.term.predicate]?.let { predicateIndex ->
+                for (key in antecedent.singleConstantKeys) {
+                    predicateIndex[key]?.let { bucket ->
+                        bucket.removeMatching()
+                        if (bucket.isEmpty()) {
+                            predicateIndex.remove(key)
+                        }
+                    }
+                }
+                if (predicateIndex.isEmpty()) {
+                    antecedentSingleToRule.remove(antecedent.term.predicate)
+                }
+            }
+        } else {
+            antecedentAnyToRule[antecedent.term.predicate]?.let { bucket ->
+                bucket.removeMatching()
+                if (bucket.isEmpty()) {
+                    antecedentAnyToRule.remove(antecedent.term.predicate)
                 }
             }
         }
@@ -477,22 +595,74 @@ class Rho {
         removeFactConstIndex(factNode)
     }
 
-    private fun getCandidateFactNodes(antecedent: AntecedentPlan): Iterable<FactNode> {
-        if (antecedent.constantKeys.isEmpty()) {
-            return facts[antecedent.term.predicate]?.values ?: emptyList()
-        }
+    private fun getCandidateFactNodes(
+        antecedent: AntecedentPlan,
+        mapping: ArrMap<Arg.Var, Arg.Const>,
+    ): Pair<Int, Collection<FactNode>> {
+        val factMap = facts[antecedent.term.predicate] ?: return 0 to emptyList()
+        var impossible = false
+        var bestCount = factMap.size
+        var bestBucket: Collection<FactNode> = factMap.values
+        val args = antecedent.term.args
+        var resolvedCount = 0
 
-        val predicateIndex = factConstIndex[antecedent.term.predicate] ?: return emptyList()
-        var bestBucket: LinkedHashSet<FactNode>? = null
-
-        for (key in antecedent.constantKeys) {
-            val bucket = predicateIndex[key] ?: return emptyList()
-            if (bestBucket == null || bucket.size < bestBucket!!.size) {
-                bestBucket = bucket
+        val singlePredicateIndex = factSingleIndex[antecedent.term.predicate]
+        if (singlePredicateIndex == null) {
+            for (i in args.indices) {
+                if (resolveArgValue(args[i], mapping) != null) {
+                    resolvedCount++
+                    impossible = true
+                    break
+                }
+            }
+        } else {
+            for (i in args.indices) {
+                val value = resolveArgValue(args[i], mapping) ?: continue
+                resolvedCount++
+                val bucket = singlePredicateIndex[ArgKey(i, value)]
+                if (bucket == null) {
+                    impossible = true
+                    break
+                }
+                if (bucket.size < bestCount) {
+                    bestCount = bucket.size
+                    bestBucket = bucket
+                }
             }
         }
 
-        return bestBucket ?: emptyList()
+        if (!impossible && resolvedCount > 1) {
+            val pairPredicateIndex = factPairIndex[antecedent.term.predicate]
+            if (pairPredicateIndex == null) {
+                impossible = true
+            } else {
+                for (firstIndex in 0 until args.size - 1) {
+                    val firstValue = resolveArgValue(args[firstIndex], mapping) ?: continue
+                    for (secondIndex in firstIndex + 1 until args.size) {
+                        val secondValue = resolveArgValue(args[secondIndex], mapping) ?: continue
+                        val pairKey =
+                            PairKey(
+                                firstIndex,
+                                firstValue,
+                                secondIndex,
+                                secondValue,
+                            )
+                        val bucket = pairPredicateIndex[pairKey]
+                        if (bucket == null) {
+                            impossible = true
+                            break
+                        }
+                        if (bucket.size < bestCount) {
+                            bestCount = bucket.size
+                            bestBucket = bucket
+                        }
+                    }
+                    if (impossible) break
+                }
+            }
+        }
+
+        return if (impossible) 0 to emptyList() else bestCount to bestBucket
     }
 
     fun add(startRule: Rho.Rule): Set<Fact> {
@@ -673,48 +843,121 @@ class Rho {
             val headRuleNode = rules[headRule]!!
             if (initialSubst.isEmpty()) inQueue.remove(headRule)
 
-            val newFacts = mutableMapOf<Fact, ConsList<FactNode>>()
+            val antecedents = headRuleNode.orderedAntecedents.toTypedArray()
+            val usedPath = arrayOfNulls<FactNode>(antecedents.size)
+            var hasSingleNewFact = false
+            var singleNewFact: Fact? = null
+            var singleUsedFacts = emptyConsList<FactNode>()
+            var manyNewFacts: LinkedHashMap<Fact, ConsList<FactNode>>? = null
+
+            fun rememberNewFact(fact: Fact, usedFacts: ConsList<FactNode>) {
+                val currentManyFacts = manyNewFacts
+                if (currentManyFacts == null) {
+                    val currentSingleFact = singleNewFact
+                    if (!hasSingleNewFact || currentSingleFact == null) {
+                        hasSingleNewFact = true
+                        singleNewFact = fact
+                        singleUsedFacts = usedFacts
+                    } else if (currentSingleFact == fact) {
+                        singleUsedFacts = usedFacts
+                    } else {
+                        val promoted = rentPendingFacts(headRuleNode.id.consequents.size)
+                        promoted[currentSingleFact] = singleUsedFacts
+                        promoted[fact] = usedFacts
+                        manyNewFacts = promoted
+                    }
+                } else {
+                    currentManyFacts[fact] = usedFacts
+                }
+            }
+
+            fun pathContainsFact(depth: Int, fact: Fact): Boolean {
+                for (i in 0 until depth) {
+                    if (usedPath[i]!!.id == fact) return true
+                }
+                return false
+            }
+
+            fun buildUsedFacts(depth: Int): ConsList<FactNode> {
+                var result = emptyConsList<FactNode>()
+                for (i in 0 until depth) {
+                    result = result.cons(usedPath[i]!!)
+                }
+                return result
+            }
 
             fun process(
-                usedFacts: ConsList<FactNode>,
-                index: Int,
-                antecedents: List<AntecedentPlan>,
+                depth: Int,
                 mapping: ArrMap<Arg.Var, Arg.Const>,
                 consequents: Arr<Term>,
             ) {
-                if (index == antecedents.size) {
+                if (depth == antecedents.size) {
+                    var materializedUsedFacts = false
+                    var usedFacts = emptyConsList<FactNode>()
+
                     for (consequent in consequents) {
                         val fact = consequent.subst(mapping).toFact()
-                        if (usedFacts.any { it.id == fact }) continue
-                        newFacts[fact] = usedFacts
+                        if (pathContainsFact(depth, fact)) continue
+
+                        if (!materializedUsedFacts) {
+                            usedFacts = buildUsedFacts(depth)
+                            materializedUsedFacts = true
+                        }
+
+                        rememberNewFact(fact, usedFacts)
                     }
                 } else {
-                    val antecedent = antecedents[index]
-                    val candidateFacts = getCandidateFactNodes(antecedent)
-                    for (factNode in candidateFacts) {
+                    var bestIndex = -1
+                    var bestCount = Int.MAX_VALUE
+                    var bestCandidates: Collection<FactNode> = emptyList()
+
+                    for (index in depth until antecedents.size) {
+                        val (candidateCount, candidateFacts) =
+                            getCandidateFactNodes(antecedents[index], mapping)
+                        if (candidateCount == 0) {
+                            bestIndex = index
+                            bestCount = 0
+                            bestCandidates = candidateFacts
+                            break
+                        }
+                        if (candidateCount < bestCount) {
+                            bestIndex = index
+                            bestCount = candidateCount
+                            bestCandidates = candidateFacts
+                        }
+                    }
+
+                    if (bestCount <= 0 || bestIndex < 0) return
+
+                    if (bestIndex != depth) {
+                        val tmp = antecedents[depth]
+                        antecedents[depth] = antecedents[bestIndex]
+                        antecedents[bestIndex] = tmp
+                    }
+
+                    val antecedent = antecedents[depth]
+                    for (factNode in bestCandidates) {
                         val subst = antecedent.term.unify(factNode.id, mapping) ?: continue
-                        val newFacts = usedFacts.cons(factNode)
-                        process(newFacts, index + 1, antecedents, subst, consequents)
+                        usedPath[depth] = factNode
+                        process(depth + 1, subst, consequents)
+                    }
+
+                    if (bestIndex != depth) {
+                        val tmp = antecedents[depth]
+                        antecedents[depth] = antecedents[bestIndex]
+                        antecedents[bestIndex] = tmp
                     }
                 }
             }
 
             if (DEBUG) println("  Processing rule `$headRule`")
-            process(
-                emptyConsList(),
-                0,
-                headRuleNode.orderedAntecedents,
-                initialSubst,
-                headRuleNode.id.consequents,
-            )
-
-            for ((fact, usedFacts) in newFacts) {
+            fun installDerivedFact(fact: Fact, usedFacts: ConsList<FactNode>) {
                 val alreadyExists = facts[fact.predicate]?.containsKey(fact) ?: false
                 val factNode = factNodeOf(fact)
 
                 val alreadyProvenViaSameRule =
                     alreadyExists && factNode.upstreamProofs.containsKey(rules[headRule]!!)
-                if (alreadyProvenViaSameRule) continue
+                if (alreadyProvenViaSameRule) return
                 // if (alreadyExists) continue
 
                 factNode.upstreamProofs[headRuleNode] =
@@ -746,7 +989,25 @@ class Rho {
                         tryEnqueueTrigger(trigger)
                     }
 
-                    val predicateIndex = antecedentConstToRule[fact.predicate]
+                    val pairPredicateIndex = antecedentPairToRule[fact.predicate]
+                    if (pairPredicateIndex != null && fact.args.size > 1) {
+                        for (firstIndex in 0 until fact.args.size - 1) {
+                            for (secondIndex in firstIndex + 1 until fact.args.size) {
+                                val pairKey =
+                                    PairKey(
+                                        firstIndex,
+                                        fact.args[firstIndex],
+                                        secondIndex,
+                                        fact.args[secondIndex],
+                                    )
+                                for (trigger in pairPredicateIndex[pairKey] ?: emptyList()) {
+                                    tryEnqueueTrigger(trigger)
+                                }
+                            }
+                        }
+                    }
+
+                    val predicateIndex = antecedentSingleToRule[fact.predicate]
                     if (predicateIndex != null) {
                         for (i in fact.args.indices) {
                             for (trigger in predicateIndex[ArgKey(i, fact.args[i])] ?: emptyList()) {
@@ -757,6 +1018,28 @@ class Rho {
 
                     addedFacts.add(fact)
                 }
+            }
+
+            try {
+                process(
+                    0,
+                    initialSubst,
+                    headRuleNode.id.consequents,
+                )
+
+                val currentManyFacts = manyNewFacts
+                if (currentManyFacts == null) {
+                    val currentSingleFact = singleNewFact
+                    if (hasSingleNewFact && currentSingleFact != null) {
+                        installDerivedFact(currentSingleFact, singleUsedFacts)
+                    }
+                } else {
+                    for ((fact, usedFacts) in currentManyFacts) {
+                        installDerivedFact(fact, usedFacts)
+                    }
+                }
+            } finally {
+                manyNewFacts?.let(::returnPendingFacts)
             }
         }
 

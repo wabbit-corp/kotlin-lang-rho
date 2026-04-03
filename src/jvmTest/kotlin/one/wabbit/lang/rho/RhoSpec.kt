@@ -1,11 +1,10 @@
 package one.wabbit.lang.rho
 
-import java.util.SplittableRandom
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import one.wabbit.data.Arr
-import one.wabbit.data.shuffled
 import one.wabbit.random.gen.Gen
 import one.wabbit.random.gen.Tests
 import one.wabbit.random.gen.sampleUnbounded
@@ -14,7 +13,7 @@ const val MAX_TEST_ARITY = 2
 const val MAX_TEST_TERMS = 4
 
 class PermSpec2 {
-    private val rng = SplittableRandom()
+    private val rng = Random(0)
     val genConst: Gen<String> =
         Gen.int(0..9).map {
             ('a' + it).toString().let { if (rng.nextBoolean()) it.intern() else it }
@@ -85,7 +84,7 @@ class PermSpec2 {
 
     @Test
     fun stressTest() {
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
         val state = Rho()
         val t0 = System.nanoTime()
         val TOTAL = 6000
@@ -111,7 +110,7 @@ class PermSpec2 {
     fun `adding and removing all rules`() {
         val genRules = Gen.listOf(2..10, genRule)
 
-        Tests.foreachMin(genRules, SplittableRandom(0), 10000, minimizerSteps = 10000) { rules ->
+        Tests.foreachMin(genRules, Random(0), 10000, minimizerSteps = 10000) { rules ->
             val state = Rho()
             for (r in rules) state.add(r)
             for (r in rules) state.remove(r)
@@ -122,12 +121,12 @@ class PermSpec2 {
 
     @Test
     fun `adding rules in different orders`() {
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
 
         val genRules = Gen.listOf(10..30, genRule)
 
         Tests.foreachMin(genRules, rng, 1000) { rules1 ->
-            val rng = SplittableRandom(0)
+            val rng = Random(0)
             val rules2 = rules1.shuffled(rng)
 
             val state1 = Rho()
@@ -143,12 +142,12 @@ class PermSpec2 {
 
     @Test
     fun `adding and removing rules in different orders`() {
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
 
         val genRules = Gen.listOf(2..5, genRule)
 
         Tests.foreachMin(genRules, rng, 1000, minimizerSteps = 10000) { rules1 ->
-            val rng = SplittableRandom(0)
+            val rng = Random(0)
             val remove1 = rules1.shuffled(rng).take(rules1.size / 2)
             val rules2 = rules1.shuffled(rng)
             val remove2 = remove1.shuffled(rng)
@@ -168,12 +167,12 @@ class PermSpec2 {
 
     @Test
     fun `adding and removing rules in different orders 2`() {
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
 
         val genRules = Gen.listOf(6..10, genRule)
 
         Tests.foreachMin(genRules, rng, 1000, minimizerSteps = 100000) { rules1 ->
-            val rng = SplittableRandom(0)
+            val rng = Random(0)
             val remove1 = rules1.take(rules1.size / 2)
             val add1 = rules1.take(rules1.size / 3)
             val remove1_2 = rules1.take(rules1.size / 4)
@@ -264,7 +263,7 @@ class PermSpec2 {
         // f2_1 :- f1_2, f1_2 ∧ f2_2 :- f1_3 ∧ f2_1, :- f2_2 ∧ f2_1
         val rules1 = listOf("a :- b".r, "b ∧ c :- d".r, ":- c ∧ a".r)
 
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
         val rules2 = rules1.shuffled(rng)
 
         val state1 = Rho()
@@ -387,7 +386,7 @@ class PermSpec2 {
                 "f(G) :- g(G) ∧ h('e')".r,
             )
 
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
         val remove1 = rules1.take(rules1.size / 2)
         val add1 = rules1.take(rules1.size / 3)
         val remove1_2 = rules1.take(rules1.size / 4)
@@ -432,7 +431,7 @@ class PermSpec2 {
                 "g(E) ∧ f(A) :- g(E)".r,
             )
 
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
         val remove1 = rules1.take(rules1.size / 2)
         val add1 = rules1.take(rules1.size / 3)
         val remove1_2 = rules1.take(rules1.size / 4)
@@ -507,7 +506,7 @@ class PermSpec2 {
                 "g(A) :- h('h')".r,
             )
 
-        val rng = SplittableRandom(0)
+        val rng = Random(0)
         val remove1 = rules1.take(rules1.size / 2)
         val add1 = rules1.take(rules1.size / 3)
         val remove1_2 = rules1.take(rules1.size / 4)
