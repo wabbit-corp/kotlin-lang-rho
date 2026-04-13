@@ -703,10 +703,10 @@ class Rho {
 
         fun removeProofVia(factNode: FactNode, ruleNode: RuleNode): Boolean? {
             val proof = factNode.upstreamProofs[ruleNode] ?: return null
-            val usedFacts = proof.usedFacts.toMutableSet()
+            val usedFacts = proof.usedFacts.toList().toMutableSet()
             for ((_, p) in factNode.upstreamProofs) {
                 if (p === proof) continue
-                usedFacts.removeAll(p.usedFacts)
+                usedFacts.removeAll(p.usedFacts.toList())
             }
             for (usedFact in usedFacts) {
                 usedFact.downstreamFacts.remove(factNode)
@@ -732,8 +732,8 @@ class Rho {
 
             if (DEBUG) {
                 println(
-                    "  Processing fact `${factNode.id}`: ${factNode.upstreamProofs.map {
-                        it.key.id.toString() to it.value.usedFacts.map { it.id.toString() }
+                    "  Processing fact `${factNode.id}`: ${factNode.upstreamProofs.entries.map { entry ->
+                        entry.key.id.toString() to entry.value.usedFacts.toList().map { usedFact -> usedFact.id.toString() }
                     }}"
                 )
             }

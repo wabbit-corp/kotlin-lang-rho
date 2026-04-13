@@ -71,11 +71,11 @@ class PermSpec2 {
             for (it in f.entries.sortedBy { it.key.toString() }) {
                 if (it.value.upstreamProofs.size == 1) {
                     val p = it.value.upstreamProofs.entries.first()
-                    println("  ${it.key} via ${p.key.id} <- ${p.value.usedFacts.map { it.id }}")
+                        println("  ${it.key} via ${p.key.id} <- ${p.value.usedFacts.toList().map { it.id }}")
                 } else {
                     println("  ${it.key} via")
                     for (p in it.value.upstreamProofs) {
-                        println("    ${p.key.id} <- ${p.value.usedFacts.map { it.id }}")
+                        println("    ${p.key.id} <- ${p.value.usedFacts.toList().map { it.id }}")
                     }
                 }
             }
